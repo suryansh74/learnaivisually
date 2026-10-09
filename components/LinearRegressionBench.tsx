@@ -7,11 +7,12 @@ type Mode = "2d" | "3d";
 type Row = { id: string; x: string; z: string; y: string };
 type Point = { x: number; z: number; y: number };
 type Hover = { label: string; left: number; top: number } | null;
+type Step = { step: number; loss: number };
 
-const LOSSES: { id: LossName; label: string; formula: string; note: string }[] = [
-  { id: "mse", label: "MSE", formula: "L = (1/n) Σ (ŷ − y)²", note: "Squares the miss. A far point pulls hard." },
-  { id: "mae", label: "MAE", formula: "L = (1/n) Σ |ŷ − y|", note: "Counts the miss once. Outliers pull less." },
-  { id: "huber", label: "Huber", formula: "L = (1/n) Σ ρ(ŷ − y), δ = 1", note: "Squared while small, then linear. δ is 1." },
+const LOSSES: { id: LossName; label: string; formula: string }[] = [
+  { id: "mse", label: "MSE", formula: "(1/n) Σ (ŷ − y)²" },
+  { id: "mae", label: "MAE", formula: "(1/n) Σ |ŷ − y|" },
+  { id: "huber", label: "Huber", formula: "squared, then linear, δ = 1" },
 ];
 
 function seedRows(): Row[] {
@@ -37,14 +38,11 @@ function predict(point: Point, w1: number, w2: number, bias: number, mode: Mode)
 }
 
 function lossOf(points: Point[], w1: number, w2: number, bias: number, loss: LossName, mode: Mode) {
-  if (points.length === 0) return 0;
+  if (!points.length) return 0;
   const total = points.reduce((sum, point) => {
     const error = predict(point, w1, w2, bias, mode) - point.y;
     if (loss === "mae") return sum + Math.abs(error);
-    if (loss === "huber") {
-      const abs = Math.abs(error);
-      return sum + (abs <= 1 ? 0.5 * error * error : abs - 0.5);
-    }
+    if (loss === "huber") return sum + (Math.abs(error) <= 1 ? 0.5 * error * error : Math.abs(error) - 0.5);
     return sum + error * error;
   }, 0);
   return total / points.length;
@@ -66,41 +64,40 @@ function gradients(points: Point[], w1: number, w2: number, bias: number, loss: 
 }
 
 function randomRows(mode: Mode): Row[] {
-  const count = 8 + Math.floor(Math.random() * 5);
-  const w1 = 0.7 + Math.random() * 0.7;
-  const w2 = 0.4 + Math.random() * 0.6;
-  const bias = 0.8 + Math.random() * 1.6;
+  const count = 8 + Math.floor(Math.random() * 4);
+  const w1 = 0.8 + Math.random() * 0.5;
+  const w2 = 0.35 + Math.random() * 0.4;
+  const bias = 1 + Math.random() * 1.4;
   return Array.from({ length: count }, (_, index) => {
-    const x = 1 + (index * 7) / (count - 1) + (Math.random() - 0.5) * 0.4;
-    const z = 1 + Math.random() * 6;
-    const y = w1 * x + (mode === "3d" ? w2 * z : 0) + bias + (Math.random() - 0.5) * 1.8;
-    return {
-      id: `rnd-${index}-${Math.random().toString(36).slice(2, 7)}`,
-      x: x.toFixed(2),
-      z: z.toFixed(2),
-      y: y.toFixed(2),
-    };
+    const x = 1 + (index * 7) / (count - 1);
+    const z = 1 + Math.random() * 5;
+    const y = w1 * x + (mode === "3d" ? w2 * z : 0) + bias + (Math.random() - 0.5) * 1.6;
+    return { id: `rnd-${index}-${Math.random().toString(36).slice(2, 6)}`, x: x.toFixed(2), z: z.toFixed(2), y: y.toFixed(2) };
   });
-}
-
-function ticks(min: number, max: number, count = 5) {
-  const step = (max - min) / (count - 1);
-  return Array.from({ length: count }, (_, index) => min + step * index);
 }
 
 export function LinearRegressionBench() {
   const [mode, setMode] = useState<Mode>("2d");
   const [rows, setRows] = useState<Row[]>(seedRows);
   const [loss, setLoss] = useState<LossName>("mse");
-  const [model, setModel] = useState({ w1: 0.15, w2: 0.1, bias: 8 });
-  const [rate, setRate] = useState(0.03);
+  const [model, setModel] = useState({ w1: 0.2, w2: 0.2, bias: 8 });
+  const [rate, setRate] = useState(0.02);
   const [playing, setPlaying] = useState(false);
   const [angle, setAngle] = useState(0.7);
-  const [history, setHistory] = useState<number[]>([1]);
+  const [history, setHistory] = useState<Step[]>([{ step: 0, loss: 0 }]);
+  const [askX, setAskX] = useState("3");
+  const [askZ, setAskZ] = useState("2");
 
   const points = useMemo(() => parsePoints(rows, mode), [rows, mode]);
   const currentLoss = lossOf(points, model.w1, model.w2, model.bias, loss, mode);
-  const selected = LOSSES.find((item) => item.id === loss) ?? LOSSES[0];
+  const asked = predict(
+    { x: Number(askX), z: Number(askZ), y: 0 },
+    model.w1,
+    model.w2,
+    model.bias,
+    mode,
+  );
+  const askReady = Number.isFinite(Number(askX)) && (mode === "2d" || Number.isFinite(Number(askZ)));
 
   useEffect(() => {
     if (!playing || points.length < 2) return;
@@ -112,10 +109,10 @@ export function LinearRegressionBench() {
           w2: mode === "3d" ? current.w2 - rate * step.dw2 : current.w2,
           bias: current.bias - rate * step.db,
         };
-        setHistory((trail) => [...trail, lossOf(points, next.w1, next.w2, next.bias, loss, mode)].slice(-48));
+        setHistory((trail) => [...trail, { step: (trail.at(-1)?.step ?? 0) + 1, loss: lossOf(points, next.w1, next.w2, next.bias, loss, mode) }].slice(-24));
         return next;
       });
-    }, 90);
+    }, 120);
     return () => window.clearInterval(timer);
   }, [playing, points, loss, rate, mode]);
 
@@ -127,176 +124,186 @@ export function LinearRegressionBench() {
       bias: model.bias - rate * step.db,
     };
     setModel(next);
-    setHistory((trail) => [...trail, lossOf(points, next.w1, next.w2, next.bias, loss, mode)].slice(-48));
+    setHistory((trail) => [...trail, { step: (trail.at(-1)?.step ?? 0) + 1, loss: lossOf(points, next.w1, next.w2, next.bias, loss, mode) }].slice(-24));
   }
 
-  function resetLine() {
-    const nextBias = points.length ? Math.max(...points.map((point) => point.y)) : 8;
+  function resetFit() {
     setPlaying(false);
-    setModel({ w1: 0.15, w2: 0.1, bias: nextBias });
-    setHistory([lossOf(points, 0.15, 0.1, nextBias, loss, mode)]);
+    setModel({ w1: 0.2, w2: 0.2, bias: 8 });
+    setHistory([{ step: 0, loss: lossOf(points, 0.2, 0.2, 8, loss, mode) }]);
   }
 
-  function fillRandom() {
-    const next = randomRows(mode);
+  function setParam(key: "w1" | "w2" | "bias", value: string) {
+    const next = Number(value);
+    if (!Number.isFinite(next)) return;
     setPlaying(false);
-    setRows(next);
-    setModel({ w1: 0.15, w2: 0.1, bias: 8 });
-    setHistory([lossOf(parsePoints(next, mode), 0.15, 0.1, 8, loss, mode)]);
-  }
-
-  function updateRow(id: string, key: "x" | "z" | "y", value: string) {
-    setPlaying(false);
-    setRows((current) => current.map((row) => (row.id === id ? { ...row, [key]: value } : row)));
+    setModel((current) => ({ ...current, [key]: next }));
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-      <section className="rounded-[1.25rem] border border-line bg-paper-raised p-4 shadow-sheet sm:p-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">Demonstration</p>
-            <h2 className="mt-1 font-display text-3xl text-ink">{mode === "2d" ? "The line learning the table" : "The plane learning the table"}</h2>
-          </div>
-          <div className="flex gap-2">
-            {(["2d", "3d"] as Mode[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => {
-                  setMode(item);
-                  setPlaying(false);
-                }}
-                className={`rounded-full px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] ${
-                  mode === item ? "bg-ink text-paper" : "border border-line text-muted"
-                }`}
-              >
-                {item === "2d" ? "2D line" : "3D plane"}
-              </button>
-            ))}
-          </div>
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-display text-3xl text-ink">Try it</h2>
+        <div className="flex gap-2">
+          {(["2d", "3d"] as Mode[]).map((item) => (
+            <button key={item} type="button" onClick={() => { setMode(item); setPlaying(false); }} className={`rounded-full px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] ${mode === item ? "bg-ink text-paper" : "border border-line text-muted"}`}>
+              {item === "2d" ? "2D line" : "3D plane"}
+            </button>
+          ))}
         </div>
-        {mode === "2d" ? (
-          <Plot2D points={points} w1={model.w1} bias={model.bias} />
-        ) : (
-          <Plot3D points={points} w1={model.w1} w2={model.w2} bias={model.bias} angle={angle} onAngle={setAngle} />
-        )}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" onClick={() => setPlaying((value) => !value)} className="rounded-full bg-accent px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper-raised">
-            {playing ? "Pause" : "Play animation"}
-          </button>
-          <button type="button" onClick={stepOnce} className="rounded-full bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper">
-            One step
-          </button>
-          <button type="button" onClick={resetLine} className="rounded-full border border-line px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-            Reset fit
-          </button>
-        </div>
-        <label className="mt-4 block max-w-xs">
-          <span className="flex justify-between font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-            learning rate <span className="text-ink">{rate.toFixed(3)}</span>
-          </span>
-          <input className="mt-2 w-full accent-highlight" type="range" min={0.005} max={0.08} step={0.005} value={rate} onChange={(event) => setRate(Number(event.target.value))} />
-        </label>
-        <p className="mt-3 font-mono text-sm text-ink-soft">
-          w1 {model.w1.toFixed(3)}
-          {mode === "3d" ? ` · w2 ${model.w2.toFixed(3)}` : ""} · b {model.bias.toFixed(3)}
-        </p>
-        <p className="font-mono text-sm text-ink-soft">
-          {selected.label} <span className="text-residual">{currentLoss.toFixed(3)}</span>
-        </p>
-        <LossSpark history={history} />
-      </section>
+      </div>
 
-      <div className="space-y-6">
-        <section className="rounded-[1.25rem] border border-line bg-paper-raised p-4 sm:p-5">
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">Loss function</p>
-          <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_340px]">
+        <div className="rounded-[1.25rem] border border-line bg-paper-raised p-4 sm:p-5">
+          {mode === "2d" ? (
+            <Plot2D points={points} w1={model.w1} bias={model.bias} />
+          ) : (
+            <Plot3D points={points} w1={model.w1} w2={model.w2} bias={model.bias} angle={angle} onAngle={setAngle} />
+          )}
+          <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
+            {mode === "3d" ? "Drag the graph to turn the plane." : "Hover for x, y, and the line value."} Amber is the current fit. It stays after you pause.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-[1.25rem] border border-line bg-paper-raised p-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">Parameters</p>
+            <p className="mt-1 text-sm text-ink-soft">Type a value. The line or plane moves at once.</p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <Field label={mode === "3d" ? "w1" : "w"} value={model.w1} onChange={(value) => setParam("w1", value)} />
+              {mode === "3d" && <Field label="w2" value={model.w2} onChange={(value) => setParam("w2", value)} />}
+              <Field label="b" value={model.bias} onChange={(value) => setParam("bias", value)} />
+              <Field label="learning rate" value={rate} onChange={(value) => setRate(Number(value) || rate)} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setPlaying((value) => !value)} className="rounded-full bg-accent px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper-raised">{playing ? "Pause" : "Train"}</button>
+              <button type="button" onClick={stepOnce} className="rounded-full bg-ink px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-paper">One step</button>
+              <button type="button" onClick={resetFit} className="rounded-full border border-line px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">Reset</button>
+            </div>
+          </div>
+
+          <div className="rounded-[1.25rem] border border-line bg-paper-raised p-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">Predict</p>
+            <p className="mt-1 text-sm text-ink-soft">Uses the parameters above. Training does not clear them.</p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="block text-sm text-muted">
+                {mode === "3d" ? "x1" : "x"}
+                <input value={askX} onChange={(event) => setAskX(event.target.value)} className="mt-1 w-full rounded-lg border border-line bg-paper px-2 py-1 font-mono text-ink" />
+              </label>
+              {mode === "3d" && (
+                <label className="block text-sm text-muted">
+                  x2
+                  <input value={askZ} onChange={(event) => setAskZ(event.target.value)} className="mt-1 w-full rounded-lg border border-line bg-paper px-2 py-1 font-mono text-ink" />
+                </label>
+              )}
+            </div>
+            <p className="mt-3 font-display text-3xl text-highlight">{askReady ? asked.toFixed(2) : "—"}</p>
+            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">predicted y</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-[1.25rem] border border-line bg-paper-raised p-4 sm:p-5">
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">Loss</p>
+          <div className="mt-3 flex flex-wrap gap-2">
             {LOSSES.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setLoss(item.id);
-                  setPlaying(false);
-                }}
-                className={`rounded-xl border px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] ${
-                  loss === item.id ? "border-accent bg-accent text-paper-raised" : "border-line text-ink"
-                }`}
-              >
+              <button key={item.id} type="button" onClick={() => { setLoss(item.id); setPlaying(false); }} className={`rounded-full px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] ${loss === item.id ? "bg-accent text-paper-raised" : "border border-line text-ink"}`}>
                 {item.label}
               </button>
             ))}
           </div>
-          <p className="equation mt-4 text-sm">{mode === "3d" ? "ŷ = w1 x1 + w2 x2 + b" : "ŷ = w x + b"}</p>
-          <p className="equation mt-2 text-sm">{selected.formula}</p>
-          <p className="mt-3 text-ink-soft">{selected.note}</p>
-        </section>
+          <p className="equation mt-4 text-sm">{LOSSES.find((item) => item.id === loss)?.formula}</p>
+          <p className="mt-3 font-mono text-sm text-ink">now {currentLoss.toFixed(3)}</p>
+          <LossHistory history={history} />
+        </div>
 
-        <section className="rounded-[1.25rem] border border-line bg-paper-raised p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">Variable table</p>
-              <h2 className="mt-1 font-display text-2xl text-ink">{mode === "3d" ? "x1, x2, y" : "x and y"}</h2>
-            </div>
+        <div className="rounded-[1.25rem] border border-line bg-paper-raised p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">Variable table</p>
             <div className="flex gap-2">
-              <button type="button" onClick={fillRandom} className="rounded-full bg-highlight px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink">
-                Random fill
-              </button>
-              <button
-                type="button"
-                onClick={() => setRows((current) => [...current, { id: `row-${Date.now()}`, x: "", z: "", y: "" }])}
-                className="rounded-full border border-line px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink"
-              >
-                Add row
-              </button>
+              <button type="button" onClick={() => { setPlaying(false); setRows(randomRows(mode)); }} className="rounded-full bg-highlight px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink">Random fill</button>
+              <button type="button" onClick={() => setRows((current) => [...current, { id: `row-${Date.now()}`, x: "", z: "", y: "" }])} className="rounded-full border border-line px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink">Add row</button>
             </div>
           </div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[280px] text-left font-mono text-sm">
+          <div className="mt-4 max-h-80 overflow-auto">
+            <table className="w-full text-left font-mono text-sm">
               <thead className="text-[11px] uppercase tracking-[0.14em] text-muted">
                 <tr>
-                  <th className="pb-2 pr-3">#</th>
-                  <th className="pb-2 pr-3">{mode === "3d" ? "x1" : "x"}</th>
-                  {mode === "3d" && <th className="pb-2 pr-3">x2</th>}
-                  <th className="pb-2 pr-3">y</th>
-                  <th className="pb-2 pr-3">ŷ</th>
-                  <th className="pb-2"> </th>
+                  <th className="pb-2 pr-2">{mode === "3d" ? "x1" : "x"}</th>
+                  {mode === "3d" && <th className="pb-2 pr-2">x2</th>}
+                  <th className="pb-2 pr-2">y</th>
+                  <th className="pb-2 pr-2">ŷ</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, index) => {
+                {rows.map((row) => {
                   const point = { x: Number(row.x), z: Number(row.z), y: Number(row.y) };
                   const usable = Number.isFinite(point.x) && Number.isFinite(point.y) && (mode === "2d" || Number.isFinite(point.z));
-                  const predicted = usable ? predict(point, model.w1, model.w2, model.bias, mode) : null;
+                  const guessed = usable ? predict(point, model.w1, model.w2, model.bias, mode) : null;
                   return (
                     <tr key={row.id} className="border-t border-line">
-                      <td className="py-2 pr-3 text-muted">{index + 1}</td>
-                      <td className="py-2 pr-3">
-                        <input value={row.x} onChange={(event) => updateRow(row.id, "x", event.target.value)} className="w-16 rounded-lg border border-line bg-paper px-2 py-1 text-ink" inputMode="decimal" />
-                      </td>
-                      {mode === "3d" && (
-                        <td className="py-2 pr-3">
-                          <input value={row.z} onChange={(event) => updateRow(row.id, "z", event.target.value)} className="w-16 rounded-lg border border-line bg-paper px-2 py-1 text-ink" inputMode="decimal" />
-                        </td>
-                      )}
-                      <td className="py-2 pr-3">
-                        <input value={row.y} onChange={(event) => updateRow(row.id, "y", event.target.value)} className="w-16 rounded-lg border border-line bg-paper px-2 py-1 text-ink" inputMode="decimal" />
-                      </td>
-                      <td className="py-2 pr-3 text-highlight">{predicted === null ? "—" : predicted.toFixed(2)}</td>
-                      <td className="py-2">
-                        <button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="text-muted hover:text-residual">
-                          remove
-                        </button>
-                      </td>
+                      <td className="py-1.5 pr-2"><input value={row.x} onChange={(event) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, x: event.target.value } : item))} className="w-16 rounded-lg border border-line bg-paper px-2 py-1" /></td>
+                      {mode === "3d" && <td className="py-1.5 pr-2"><input value={row.z} onChange={(event) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, z: event.target.value } : item))} className="w-16 rounded-lg border border-line bg-paper px-2 py-1" /></td>}
+                      <td className="py-1.5 pr-2"><input value={row.y} onChange={(event) => setRows((current) => current.map((item) => item.id === row.id ? { ...item, y: event.target.value } : item))} className="w-16 rounded-lg border border-line bg-paper px-2 py-1" /></td>
+                      <td className="py-1.5 pr-2 text-highlight">{guessed === null ? "—" : guessed.toFixed(2)}</td>
+                      <td><button type="button" onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} className="text-muted">remove</button></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-sm text-muted">{points.length} usable rows. Empty or non-numeric rows are ignored.</p>
-        </section>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Field({ label, value, onChange }: { label: string; value: number; onChange: (value: string) => void }) {
+  const [text, setText] = useState(value.toFixed(3));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(value.toFixed(3));
+  }, [value, focused]);
+  return (
+    <label className="block text-sm text-muted">
+      {label}
+      <input
+        value={text}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(event) => {
+          setText(event.target.value);
+          onChange(event.target.value);
+        }}
+        className="mt-1 w-full rounded-lg border border-line bg-paper px-2 py-1 font-mono text-ink"
+      />
+    </label>
+  );
+}
+
+function LossHistory({ history }: { history: Step[] }) {
+  const max = Math.max(...history.map((item) => item.loss), 0.1);
+  const width = 320;
+  const height = 88;
+  const path = history.map((item, index) => {
+    const x = (index / Math.max(history.length - 1, 1)) * (width - 36) + 32;
+    const y = 12 + (1 - item.loss / max) * 58;
+    return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <div className="mt-4">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full rounded-xl bg-paper">
+        <text x="4" y="16" fill="var(--muted)" fontSize="11" fontFamily="IBM Plex Mono, monospace">{max.toFixed(2)}</text>
+        <text x="4" y="74" fill="var(--muted)" fontSize="11" fontFamily="IBM Plex Mono, monospace">0</text>
+        <path d={path} fill="none" stroke="var(--residual)" strokeWidth="2" />
+      </svg>
+      <div className="mt-2 max-h-28 overflow-auto font-mono text-[12px] text-ink-soft">
+        {history.slice().reverse().map((item) => (
+          <p key={`${item.step}-${item.loss}`}>step {item.step} · loss {item.loss.toFixed(3)}</p>
+        ))}
       </div>
     </div>
   );
@@ -304,96 +311,53 @@ export function LinearRegressionBench() {
 
 function Plot2D({ points, w1, bias }: { points: Point[]; w1: number; bias: number }) {
   const width = 640;
-  const height = 400;
-  const pad = { left: 52, right: 18, top: 16, bottom: 36 };
+  const height = 390;
+  const pad = { left: 52, right: 16, top: 16, bottom: 34 };
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
   const xMin = Math.min(0, ...xs) - 0.4;
   const xMax = Math.max(8, ...xs, 1) + 0.4;
-  const yMin = Math.min(0, ...ys, bias) - 0.8;
-  const yMax = Math.max(10, ...ys, bias) + 0.8;
-  const innerW = width - pad.left - pad.right;
-  const innerH = height - pad.top - pad.bottom;
-  const sx = (x: number) => pad.left + ((x - xMin) / (xMax - xMin)) * innerW;
-  const sy = (y: number) => pad.top + (1 - (y - yMin) / (yMax - yMin)) * innerH;
+  const yMin = Math.min(0, ...ys, bias) - 0.6;
+  const yMax = Math.max(8, ...ys, bias) + 0.6;
+  const sx = (x: number) => pad.left + ((x - xMin) / (xMax - xMin)) * (width - pad.left - pad.right);
+  const sy = (y: number) => pad.top + (1 - (y - yMin) / (yMax - yMin)) * (height - pad.top - pad.bottom);
   const [hover, setHover] = useState<Hover>(null);
-  const xTicks = ticks(xMin, xMax);
-  const yTicks = ticks(yMin, yMax);
-
-  function onMove(event: React.MouseEvent<SVGSVGElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const px = ((event.clientX - rect.left) / rect.width) * width;
-    const py = ((event.clientY - rect.top) / rect.height) * height;
-    if (px < pad.left || px > width - pad.right || py < pad.top || py > height - pad.bottom) {
-      setHover(null);
-      return;
-    }
-    const x = xMin + ((px - pad.left) / innerW) * (xMax - xMin);
-    const y = yMin + (1 - (py - pad.top) / innerH) * (yMax - yMin);
-    let nearest: Point | null = null;
-    let best = 18;
-    for (const point of points) {
-      const distance = Math.hypot(sx(point.x) - px, sy(point.y) - py);
-      if (distance < best) {
-        best = distance;
-        nearest = point;
-      }
-    }
-    const predicted = w1 * x + bias;
-    const label = nearest
-      ? `point  x ${nearest.x.toFixed(2)}   y ${nearest.y.toFixed(2)}   ŷ ${(w1 * nearest.x + bias).toFixed(2)}`
-      : `x ${x.toFixed(2)}   y ${y.toFixed(2)}   line ŷ ${predicted.toFixed(2)}`;
-    setHover({ label, left: event.clientX - rect.left + 12, top: event.clientY - rect.top + 12 });
-  }
+  const xTicks = [xMin, (xMin + xMax) / 2, xMax];
+  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
 
   return (
-    <div className="relative mt-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full rounded-xl bg-paper" onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+    <div className="relative">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full rounded-xl bg-paper" onMouseMove={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const px = ((event.clientX - rect.left) / rect.width) * width;
+        const py = ((event.clientY - rect.top) / rect.height) * height;
+        const x = xMin + ((px - pad.left) / (width - pad.left - pad.right)) * (xMax - xMin);
+        const y = yMin + (1 - (py - pad.top) / (height - pad.top - pad.bottom)) * (yMax - yMin);
+        setHover({ label: `x ${x.toFixed(2)}   y ${y.toFixed(2)}   line ${(w1 * x + bias).toFixed(2)}`, left: event.clientX - rect.left + 12, top: event.clientY - rect.top + 12 });
+      }} onMouseLeave={() => setHover(null)}>
         {yTicks.map((tick) => (
-          <g key={`y-${tick}`}>
+          <g key={tick}>
             <line x1={pad.left} x2={width - pad.right} y1={sy(tick)} y2={sy(tick)} stroke="var(--line)" />
-            <text x={6} y={sy(tick) + 4} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">
-              {tick.toFixed(1)}
-            </text>
+            <text x="6" y={sy(tick) + 4} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">{tick.toFixed(1)}</text>
           </g>
         ))}
-        {xTicks.map((tick) => (
-          <text key={`x-${tick}`} x={sx(tick) - 12} y={height - 10} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">
-            {tick.toFixed(1)}
-          </text>
-        ))}
-        <text x={pad.left} y={14} fill="var(--muted)" fontSize="11" fontFamily="IBM Plex Mono, monospace">y</text>
-        <text x={width - 28} y={height - 12} fill="var(--muted)" fontSize="11" fontFamily="IBM Plex Mono, monospace">x</text>
+        {xTicks.map((tick) => <text key={tick} x={sx(tick) - 12} y={height - 8} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">{tick.toFixed(1)}</text>)}
         <path d={`M${sx(xMin)},${sy(w1 * xMin + bias)} L${sx(xMax)},${sy(w1 * xMax + bias)}`} fill="none" stroke="var(--highlight)" strokeWidth="2.6" />
         {points.map((point) => (
           <g key={`${point.x}-${point.y}`}>
-            <line x1={sx(point.x)} x2={sx(point.x)} y1={sy(point.y)} y2={sy(w1 * point.x + bias)} stroke="var(--residual)" strokeWidth="1.3" />
+            <line x1={sx(point.x)} x2={sx(point.x)} y1={sy(point.y)} y2={sy(w1 * point.x + bias)} stroke="var(--residual)" />
             <circle cx={sx(point.x)} cy={sy(point.y)} r="4.5" fill="var(--accent)" />
           </g>
         ))}
       </svg>
-      {hover && <Tooltip hover={hover} />}
+      {hover && <Tip hover={hover} />}
     </div>
   );
 }
 
-function Plot3D({
-  points,
-  w1,
-  w2,
-  bias,
-  angle,
-  onAngle,
-}: {
-  points: Point[];
-  w1: number;
-  w2: number;
-  bias: number;
-  angle: number;
-  onAngle: (angle: number) => void;
-}) {
+function Plot3D({ points, w1, w2, bias, angle, onAngle }: { points: Point[]; w1: number; w2: number; bias: number; angle: number; onAngle: (angle: number) => void }) {
   const width = 640;
-  const height = 420;
+  const height = 400;
   const xs = points.map((point) => point.x);
   const zs = points.map((point) => point.z);
   const ys = points.map((point) => point.y);
@@ -403,116 +367,70 @@ function Plot3D({
   const zMax = Math.max(6, ...zs, 1);
   const yMax = Math.max(10, ...ys, bias, 1);
   const [hover, setHover] = useState<Hover>(null);
+  const [drag, setDrag] = useState<number | null>(null);
 
   function project(x: number, z: number, y: number) {
     const nx = (x - xMin) / (xMax - xMin) - 0.5;
     const nz = (z - zMin) / (zMax - zMin) - 0.5;
-    const ny = y / yMax;
     const c = Math.cos(angle);
     const s = Math.sin(angle);
     const px = nx * c - nz * s;
     const pz = nx * s + nz * c;
-    return {
-      x: 320 + px * 250 + pz * 40,
-      y: 300 - ny * 230 + pz * 90,
-      depth: pz,
-    };
+    return { x: 320 + px * 240 + pz * 36, y: 292 - (y / yMax) * 220 + pz * 86 };
   }
 
   const grid = [0, 0.25, 0.5, 0.75, 1];
-  const planeLines = grid.flatMap((t) => {
+  const lines = grid.flatMap((t) => {
     const x = xMin + t * (xMax - xMin);
     const z = zMin + t * (zMax - zMin);
-    const alongX = [project(x, zMin, w1 * x + w2 * zMin + bias), project(x, zMax, w1 * x + w2 * zMax + bias)];
-    const alongZ = [project(xMin, z, w1 * xMin + w2 * z + bias), project(xMax, z, w1 * xMax + w2 * z + bias)];
-    return [alongX, alongZ];
+    return [
+      [project(x, zMin, w1 * x + w2 * zMin + bias), project(x, zMax, w1 * x + w2 * zMax + bias)],
+      [project(xMin, z, w1 * xMin + w2 * z + bias), project(xMax, z, w1 * xMax + w2 * z + bias)],
+    ];
   });
-  const projected = points
-    .map((point) => ({ point, screen: project(point.x, point.z, point.y), fit: project(point.x, point.z, w1 * point.x + w2 * point.z + bias) }))
-    .sort((a, b) => a.screen.depth - b.screen.depth);
-  const xAxis = [project(xMin, zMin, 0), project(xMax, zMin, 0)];
-  const zAxis = [project(xMin, zMin, 0), project(xMin, zMax, 0)];
-  const yAxis = [project(xMin, zMin, 0), project(xMin, zMin, yMax)];
-
-  function onMove(event: React.MouseEvent<SVGSVGElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const px = ((event.clientX - rect.left) / rect.width) * width;
-    const py = ((event.clientY - rect.top) / rect.height) * height;
-    let nearest: (typeof projected)[number] | null = null;
-    let best = 20;
-    for (const item of projected) {
-      const distance = Math.hypot(item.screen.x - px, item.screen.y - py);
-      if (distance < best) {
-        best = distance;
-        nearest = item;
-      }
-    }
-    if (!nearest) {
-      setHover(null);
-      return;
-    }
-    const predicted = w1 * nearest.point.x + w2 * nearest.point.z + bias;
-    setHover({
-      label: `x1 ${nearest.point.x.toFixed(2)}   x2 ${nearest.point.z.toFixed(2)}   y ${nearest.point.y.toFixed(2)}   ŷ ${predicted.toFixed(2)}`,
-      left: event.clientX - rect.left + 12,
-      top: event.clientY - rect.top + 12,
-    });
-  }
 
   return (
-    <div className="relative mt-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full rounded-xl bg-paper" onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
-        <line x1={xAxis[0].x} y1={xAxis[0].y} x2={xAxis[1].x} y2={xAxis[1].y} stroke="var(--line)" />
-        <line x1={zAxis[0].x} y1={zAxis[0].y} x2={zAxis[1].x} y2={zAxis[1].y} stroke="var(--line)" />
-        <line x1={yAxis[0].x} y1={yAxis[0].y} x2={yAxis[1].x} y2={yAxis[1].y} stroke="var(--line)" />
-        <text x={xAxis[1].x + 6} y={xAxis[1].y} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">x1 {xMax.toFixed(1)}</text>
-        <text x={zAxis[1].x + 6} y={zAxis[1].y} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">x2 {zMax.toFixed(1)}</text>
-        <text x={yAxis[1].x - 46} y={yAxis[1].y - 6} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">y {yMax.toFixed(1)}</text>
-        <text x={xAxis[0].x - 18} y={xAxis[0].y + 16} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">0</text>
-        {planeLines.map((line, index) => (
-          <line key={index} x1={line[0].x} y1={line[0].y} x2={line[1].x} y2={line[1].y} stroke="var(--highlight)" strokeOpacity="0.75" />
-        ))}
-        {projected.map((item) => (
-          <g key={`${item.point.x}-${item.point.z}`}>
-            <line x1={item.screen.x} y1={item.screen.y} x2={item.fit.x} y2={item.fit.y} stroke="var(--residual)" strokeWidth="1.3" />
-            <circle cx={item.screen.x} cy={item.screen.y} r="4.5" fill="var(--accent)" />
-          </g>
-        ))}
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full cursor-grab rounded-xl bg-paper active:cursor-grabbing"
+        onPointerDown={(event) => { setDrag(event.clientX); event.currentTarget.setPointerCapture(event.pointerId); }}
+        onPointerUp={() => setDrag(null)}
+        onPointerMove={(event) => {
+          if (drag !== null) onAngle(angle + (event.clientX - drag) * 0.01);
+          const rect = event.currentTarget.getBoundingClientRect();
+          const px = ((event.clientX - rect.left) / rect.width) * width;
+          const py = ((event.clientY - rect.top) / rect.height) * height;
+          const nearest = points
+            .map((point) => ({ point, screen: project(point.x, point.z, point.y) }))
+            .sort((a, b) => Math.hypot(a.screen.x - px, a.screen.y - py) - Math.hypot(b.screen.x - px, b.screen.y - py))[0];
+          const label = nearest && Math.hypot(nearest.screen.x - px, nearest.screen.y - py) < 22
+            ? `x1 ${nearest.point.x.toFixed(2)}  x2 ${nearest.point.z.toFixed(2)}  y ${nearest.point.y.toFixed(2)}  ŷ ${(w1 * nearest.point.x + w2 * nearest.point.z + bias).toFixed(2)}`
+            : "drag to rotate";
+          setHover({ label, left: event.clientX - rect.left + 12, top: event.clientY - rect.top + 12 });
+          if (drag !== null) setDrag(event.clientX);
+        }}
+        onPointerLeave={() => { setHover(null); setDrag(null); }}
+      >
+        {lines.map((line, index) => <line key={index} x1={line[0].x} y1={line[0].y} x2={line[1].x} y2={line[1].y} stroke="var(--highlight)" strokeOpacity="0.8" />)}
+        {points.map((point) => {
+          const screen = project(point.x, point.z, point.y);
+          const fit = project(point.x, point.z, w1 * point.x + w2 * point.z + bias);
+          return (
+            <g key={`${point.x}-${point.z}`}>
+              <line x1={screen.x} y1={screen.y} x2={fit.x} y2={fit.y} stroke="var(--residual)" />
+              <circle cx={screen.x} cy={screen.y} r="4.5" fill="var(--accent)" />
+            </g>
+          );
+        })}
+        <text x="24" y="24" fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">y {yMax.toFixed(1)}</text>
+        <text x="24" y={height - 16} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">x1 {xMin.toFixed(1)} to {xMax.toFixed(1)} · x2 {zMin.toFixed(1)} to {zMax.toFixed(1)}</text>
       </svg>
-      {hover && <Tooltip hover={hover} />}
-      <label className="mt-2 block max-w-xs">
-        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">rotate plane</span>
-        <input className="mt-1 w-full accent-highlight" type="range" min={-1.2} max={2.2} step={0.02} value={angle} onChange={(event) => onAngle(Number(event.target.value))} />
-      </label>
+      {hover && <Tip hover={hover} />}
     </div>
   );
 }
 
-function Tooltip({ hover }: { hover: Exclude<Hover, null> }) {
-  return (
-    <div className="pointer-events-none absolute z-10 rounded-lg border border-line bg-paper-raised px-2 py-1 font-mono text-[11px] text-ink" style={{ left: hover.left, top: hover.top }}>
-      {hover.label}
-    </div>
-  );
-}
-
-function LossSpark({ history }: { history: number[] }) {
-  const max = Math.max(...history, 0.1);
-  const width = 280;
-  const height = 52;
-  const path = history
-    .map((value, index) => {
-      const x = (index / Math.max(history.length - 1, 1)) * width;
-      const y = height - (value / max) * (height - 4) - 2;
-      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return (
-    <div className="mt-4 rounded-xl border border-line bg-paper px-3 py-2">
-      <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">loss trail</p>
-      <svg viewBox={`0 0 ${width} ${height}`} className="mt-1 h-12 w-full">
-        <path d={path} fill="none" stroke="var(--residual)" strokeWidth="2" />
-      </svg>
-    </div>
-  );
+function Tip({ hover }: { hover: Exclude<Hover, null> }) {
+  return <div className="pointer-events-none absolute z-10 rounded-lg border border-line bg-paper-raised px-2 py-1 font-mono text-[11px] text-ink" style={{ left: hover.left, top: hover.top }}>{hover.label}</div>;
 }
