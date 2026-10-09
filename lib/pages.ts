@@ -19,20 +19,13 @@ export const pages: PageMeta[] = [
     href: "/binary-cross-entropy",
     title: "Binary cross-entropy",
     status: "working",
-    summary: "Sigmoid, two-class labels, and logistic regression. The next page after the line.",
+    summary: "Sigmoid, two classes, table, 2D and 3D training, and log loss.",
   },
   {
     slug: "categorical-cross-entropy",
     href: "/categorical-cross-entropy",
     title: "Categorical cross-entropy",
     status: "working",
-    summary: "Softmax and multi-class labels. The next page after binary cross-entropy.",
-  },
-  {
-    slug: "pca",
-    href: "/pca",
-    title: "PCA, a side demo",
-    status: "working",
-    summary: "Not regression. A small view of squeezing many axes into the directions that vary most.",
+    summary: "Softmax, three classes, table, 2D and 3D training, and multi-class log loss.",
   },
 ];
