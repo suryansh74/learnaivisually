@@ -1,5 +1,7 @@
 "use client";
 
+import { DetailedCalculation } from "@/components/DetailedCalculation";
+import { Plot3D } from "@/components/Plot3D";
 import { useEffect, useMemo, useState } from "react";
 
 type LossName = "mse" | "mae" | "huber";
@@ -83,7 +85,6 @@ export function LinearRegressionBench() {
   const [model, setModel] = useState({ w1: 0.2, w2: 0.2, bias: 8 });
   const [rate, setRate] = useState(0.02);
   const [playing, setPlaying] = useState(false);
-  const [angle, setAngle] = useState(0.7);
   const [history, setHistory] = useState<Step[]>([{ step: 0, loss: 0 }]);
   const [askX, setAskX] = useState("3");
   const [askZ, setAskZ] = useState("2");
@@ -158,10 +159,10 @@ export function LinearRegressionBench() {
           {mode === "2d" ? (
             <Plot2D points={points} w1={model.w1} bias={model.bias} />
           ) : (
-            <Plot3D points={points} w1={model.w1} w2={model.w2} bias={model.bias} angle={angle} onAngle={setAngle} />
+            <Plot3D points={points} w1={model.w1} w2={model.w2} bias={model.bias} />
           )}
           <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
-            {mode === "3d" ? "Drag the graph to turn the plane." : "Hover for x, y, and the line value."} Amber is the current fit. It stays after you pause.
+            {mode === "3d" ? "Drag the graph. Horizontal drag turns x2. Vertical drag tips the view." : "Hover for x, y, and the line value."} Amber is the current fit. It stays after you pause.
           </p>
         </div>
 
@@ -257,6 +258,7 @@ export function LinearRegressionBench() {
           </div>
         </div>
       </div>
+      <DetailedCalculation points={points} w1={model.w1} w2={model.w2} bias={model.bias} rate={rate} loss={loss} mode={mode} />
     </section>
   );
 }
@@ -349,82 +351,6 @@ function Plot2D({ points, w1, bias }: { points: Point[]; w1: number; bias: numbe
             <circle cx={sx(point.x)} cy={sy(point.y)} r="4.5" fill="var(--accent)" />
           </g>
         ))}
-      </svg>
-      {hover && <Tip hover={hover} />}
-    </div>
-  );
-}
-
-function Plot3D({ points, w1, w2, bias, angle, onAngle }: { points: Point[]; w1: number; w2: number; bias: number; angle: number; onAngle: (angle: number) => void }) {
-  const width = 640;
-  const height = 400;
-  const xs = points.map((point) => point.x);
-  const zs = points.map((point) => point.z);
-  const ys = points.map((point) => point.y);
-  const xMin = Math.min(0, ...xs);
-  const xMax = Math.max(8, ...xs, 1);
-  const zMin = Math.min(0, ...zs);
-  const zMax = Math.max(6, ...zs, 1);
-  const yMax = Math.max(10, ...ys, bias, 1);
-  const [hover, setHover] = useState<Hover>(null);
-  const [drag, setDrag] = useState<number | null>(null);
-
-  function project(x: number, z: number, y: number) {
-    const nx = (x - xMin) / (xMax - xMin) - 0.5;
-    const nz = (z - zMin) / (zMax - zMin) - 0.5;
-    const c = Math.cos(angle);
-    const s = Math.sin(angle);
-    const px = nx * c - nz * s;
-    const pz = nx * s + nz * c;
-    return { x: 320 + px * 240 + pz * 36, y: 292 - (y / yMax) * 220 + pz * 86 };
-  }
-
-  const grid = [0, 0.25, 0.5, 0.75, 1];
-  const lines = grid.flatMap((t) => {
-    const x = xMin + t * (xMax - xMin);
-    const z = zMin + t * (zMax - zMin);
-    return [
-      [project(x, zMin, w1 * x + w2 * zMin + bias), project(x, zMax, w1 * x + w2 * zMax + bias)],
-      [project(xMin, z, w1 * xMin + w2 * z + bias), project(xMax, z, w1 * xMax + w2 * z + bias)],
-    ];
-  });
-
-  return (
-    <div className="relative">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="w-full cursor-grab rounded-xl bg-paper active:cursor-grabbing"
-        onPointerDown={(event) => { setDrag(event.clientX); event.currentTarget.setPointerCapture(event.pointerId); }}
-        onPointerUp={() => setDrag(null)}
-        onPointerMove={(event) => {
-          if (drag !== null) onAngle(angle + (event.clientX - drag) * 0.01);
-          const rect = event.currentTarget.getBoundingClientRect();
-          const px = ((event.clientX - rect.left) / rect.width) * width;
-          const py = ((event.clientY - rect.top) / rect.height) * height;
-          const nearest = points
-            .map((point) => ({ point, screen: project(point.x, point.z, point.y) }))
-            .sort((a, b) => Math.hypot(a.screen.x - px, a.screen.y - py) - Math.hypot(b.screen.x - px, b.screen.y - py))[0];
-          const label = nearest && Math.hypot(nearest.screen.x - px, nearest.screen.y - py) < 22
-            ? `x1 ${nearest.point.x.toFixed(2)}  x2 ${nearest.point.z.toFixed(2)}  y ${nearest.point.y.toFixed(2)}  ŷ ${(w1 * nearest.point.x + w2 * nearest.point.z + bias).toFixed(2)}`
-            : "drag to rotate";
-          setHover({ label, left: event.clientX - rect.left + 12, top: event.clientY - rect.top + 12 });
-          if (drag !== null) setDrag(event.clientX);
-        }}
-        onPointerLeave={() => { setHover(null); setDrag(null); }}
-      >
-        {lines.map((line, index) => <line key={index} x1={line[0].x} y1={line[0].y} x2={line[1].x} y2={line[1].y} stroke="var(--highlight)" strokeOpacity="0.8" />)}
-        {points.map((point) => {
-          const screen = project(point.x, point.z, point.y);
-          const fit = project(point.x, point.z, w1 * point.x + w2 * point.z + bias);
-          return (
-            <g key={`${point.x}-${point.z}`}>
-              <line x1={screen.x} y1={screen.y} x2={fit.x} y2={fit.y} stroke="var(--residual)" />
-              <circle cx={screen.x} cy={screen.y} r="4.5" fill="var(--accent)" />
-            </g>
-          );
-        })}
-        <text x="24" y="24" fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">y {yMax.toFixed(1)}</text>
-        <text x="24" y={height - 16} fill="var(--muted)" fontSize="12" fontFamily="IBM Plex Mono, monospace">x1 {xMin.toFixed(1)} to {xMax.toFixed(1)} · x2 {zMin.toFixed(1)} to {zMax.toFixed(1)}</text>
       </svg>
       {hover && <Tip hover={hover} />}
     </div>
