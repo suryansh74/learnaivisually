@@ -31,7 +31,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('learnaivisually-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}",
+          }}
+        />
+      </head>
       <body className={`${display.variable} ${body.variable} ${mono.variable} min-h-screen antialiased`}>
         <SiteHeader />
         <main className="mx-auto w-full max-w-sheet px-5 pb-20 pt-8 sm:px-8">{children}</main>
