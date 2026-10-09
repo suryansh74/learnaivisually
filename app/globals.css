@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #f3eee4;
+  --paper-raised: #fffdf8;
+  --ink: #1c1915;
+  --ink-soft: #3d3832;
+  --muted: #6e675e;
+  --line: #e3dacb;
+  --accent: #1e4d6b;
+  --accent-soft: #e6f0f4;
+  --highlight: #c9842a;
+  --residual: #b55248;
+  --good: #2d6a4f;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(30, 77, 107, 0.06), transparent 55%),
+    var(--paper);
+  font-family: var(--font-body), Georgia, serif;
+}
+
+::selection {
+  background: #f3dfb8;
+  color: var(--ink);
+}
+
+.prose-measure {
+  max-width: 42rem;
+}
+
+.equation {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  color: var(--ink-soft);
+}
