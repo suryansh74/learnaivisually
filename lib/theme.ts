@@ -35,7 +35,7 @@ export const theme = {
     "The thing being learned (the fitted line, the answer) is text-highlight / stroke highlight.",
     "Error, residuals, and loss are text-residual. A correct or converged state is text-good.",
     "Links and section labels use text-accent. Do not add a second accent color.",
-    "Wrap every essay in PostLayout. Do not restyle the header, footer, or prose measure.",
+    "The header theme control is light, dark, or system. System follows the OS. Token names stay the same in both.",
   ],
 } as const;
 
