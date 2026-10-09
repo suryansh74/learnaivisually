@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function SiteHeader() {
   return (
     <header className="border-b border-line/80">
-      <div className="mx-auto flex max-w-sheet items-center justify-between gap-6 px-5 py-5 sm:px-8">
+      <div className="mx-auto flex max-w-sheet flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-8">
         <Link href="/" className="group">
           <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-accent">
             Learn AI Visually
@@ -12,17 +13,20 @@ export function SiteHeader() {
             ink & paper
           </span>
         </Link>
-        <nav className="flex items-center gap-5 font-mono text-[12px] uppercase tracking-[0.16em] text-muted">
-          <Link href="/" className="hover:text-ink">
-            Pages
-          </Link>
-          <Link href="/linear-regression" className="hover:text-ink">
-            Linear regression
-          </Link>
-          <Link href="/theme" className="hover:text-ink">
-            Theme
-          </Link>
-        </nav>
+        <div className="flex flex-wrap items-center gap-4">
+          <nav className="flex items-center gap-5 font-mono text-[12px] uppercase tracking-[0.16em] text-muted">
+            <Link href="/" className="hover:text-ink">
+              Pages
+            </Link>
+            <Link href="/linear-regression" className="hover:text-ink">
+              Linear regression
+            </Link>
+            <Link href="/theme" className="hover:text-ink">
+              Theme
+            </Link>
+          </nav>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );
