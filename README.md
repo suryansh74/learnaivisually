@@ -2,7 +2,7 @@
 
 Visual essays on machine learning. One shared theme, so a new post looks like the next page of the same notebook.
 
-First essay: [Linear regression, drawn out](https://github.com/suryansh74/learnaivisually) — move the line, see squared error, then compare closed-form least squares with gradient descent.
+Home is the page list. The working page is `/linear-regression`: play the fit, edit the variable table, random-fill it, and switch the loss between MSE, MAE, and Huber.
 
 ## Run it
 
