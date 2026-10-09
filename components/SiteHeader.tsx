@@ -13,11 +13,14 @@ export function SiteHeader() {
           </span>
         </Link>
         <nav className="flex items-center gap-5 font-mono text-[12px] uppercase tracking-[0.16em] text-muted">
+          <Link href="/" className="hover:text-ink">
+            Pages
+          </Link>
+          <Link href="/linear-regression" className="hover:text-ink">
+            Linear regression
+          </Link>
           <Link href="/theme" className="hover:text-ink">
             Theme
-          </Link>
-          <Link href="/blog/linear-regression" className="hover:text-ink">
-            First essay
           </Link>
         </nav>
       </div>
