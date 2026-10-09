@@ -1,7 +1,7 @@
 import { LinearRegressionBench } from "@/components/LinearRegressionBench";
 import { NextPage } from "@/components/NextPage";
+import { Term } from "@/components/Term";
 import type { Metadata } from "next";
-import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Linear regression",
@@ -21,19 +21,19 @@ export default function LinearRegressionPage() {
 
       <section className="max-w-prose space-y-8 text-[1.05rem] leading-8 text-ink-soft">
         <Block title="What you are predicting">
-          A training example is one row: features in, target out. The feature is x. The target is y. The model does not see a new y. It guesses ŷ. The residual is y − ŷ, the vertical miss. Regression means the target is a number. Classification, on the next pages, means the target is a class.
+          A <Term>training example</Term> is one row: features in, target out. The <Term>feature</Term> is x. The <Term>target</Term> is y. The model guesses <Term>ŷ</Term>. The <Term>residual</Term> is y − ŷ. <Term>Regression</Term> means the target is a number. <Term>Classification</Term>, on the next pages, means the target is a class.
         </Block>
         <Block title="The hypothesis">
-          The hypothesis is the shape you allow. Here it is linear: ŷ = w x + b. w is the weight, also called the slope: if x grows by 1, the guess grows by w. b is the bias, also called the intercept: the guess when x is 0. Together they are the parameters. With a second feature, ŷ = w1 x1 + w2 x2 + b. That is a plane. x2 is the depth axis in the 3D view. Changing w2 tilts the plane along that axis.
+          The <Term>hypothesis</Term> is the shape you allow. Here it is linear: ŷ = w x + b. <Term>w</Term> is the weight, also called the slope. <Term>b</Term> is the bias, also called the intercept. Together they are the <Term>parameters</Term>. With a second feature, ŷ = w1 x1 + w2 x2 + b. That is a plane. x2 is the depth axis. Changing w2 tilts the plane along that axis.
         </Block>
         <Block title="Loss and cost">
-          Loss is the penalty on one row. Cost, often written J, is the average loss on the table. People mix the words. On this page, loss is one miss and cost is the mean. Mean squared error squares the miss, so a far point pulls hard. Mean absolute error uses the size of the miss only. Huber is squared while the miss is small, then linear, so one outlier cannot own the fit. Training minimizes the cost.
+          <Term>Loss</Term> is the penalty on one row. <Term>Cost</Term>, often written J, is the average loss on the table. <Term>Mean squared error</Term> squares the miss. <Term>Mean absolute error</Term> uses the size of the miss only. <Term>Huber</Term> is squared while the miss is small, then linear. Training minimizes the cost.
         </Block>
         <Block title="How the numbers move">
-          A gradient is the slope of the cost with respect to a parameter. Partial derivatives ∂J/∂w and ∂J/∂b say which way is uphill. Gradient descent steps the other way: parameter ← parameter − α × slope. α is the learning rate. One such nudge is a step. A pass over the data is an epoch. Too large an α jumps over the bottom. Too small and the line crawls. For one feature, least squares also has a closed form. Descent is the picture that still works when the formula does not.
+          A <Term>gradient</Term> is the slope of the cost. <Term>Partial derivatives</Term> ∂J/∂w and ∂J/∂b say which way is uphill. <Term>Gradient descent</Term> steps the other way. <Term>Learning rate</Term> α sets the step size. One nudge is a <Term>step</Term>. A pass over the data is an <Term>epoch</Term>. For one feature, <Term>least squares</Term> also has a closed form.
         </Block>
         <Block title="What the line cannot do">
-          A linear model cannot bend. If the cloud curves, the best line is still straight and the residuals keep a pattern. More features make a flat in a higher dimension, not a curve. If those features repeat each other, the weights get unstable. That is where PCA can help: it is not regression. It squeezes correlated axes into fewer directions, and then a line can be fit on those scores. <Link href="/pca" className="text-accent">Open the PCA side demo</Link>.
+          A linear model cannot bend. If the cloud curves, the best line is still straight and the residuals keep a pattern. More features make a flat in a higher dimension, not a curve.
         </Block>
       </section>
 
